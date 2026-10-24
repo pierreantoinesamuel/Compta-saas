@@ -73,6 +73,8 @@ export function buildApp() {
 
   app.addHook('preHandler', async (request, reply) => {
     const path = (request.url.split('?')[0] ?? request.url) as string;
+    // Static frontend assets — no auth required
+    if (!path.startsWith('/api/')) return;
     if (PUBLIC_PATH_EXACT.has(path) || PUBLIC_PATH_PREFIXES.some((p) => path.startsWith(p))) {
       return;
     }
