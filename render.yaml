@@ -3,8 +3,8 @@ services:
     name: haxatax
     env: node
     plan: free
-    buildCommand: npm install && npx vite build && npx tsc -p tsconfig.server.json
-    startCommand: node dist-server/server/index.js
+    buildCommand: npm install && npx vite build
+    startCommand: npx tsx server/index.ts
     envVars:
       - key: NODE_ENV
         value: production
