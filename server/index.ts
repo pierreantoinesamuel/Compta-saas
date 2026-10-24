@@ -790,9 +790,8 @@ export function buildApp() {
   });
 
   if (process.env.NODE_ENV === 'production') {
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const distPath = path.join(__dirname, '..', '..', 'dist');
-    void app.register(fastifyStatic, { root: distPath });
+    const distPath = path.join(process.cwd(), 'dist');
+    void app.register(fastifyStatic, { root: distPath, index: ['index.html'] });
     app.setNotFoundHandler((_req, reply) => reply.sendFile('index.html'));
   }
 
