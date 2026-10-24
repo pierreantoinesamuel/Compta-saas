@@ -72,10 +72,10 @@ export function buildApp() {
   ];
 
   app.addHook('preHandler', async (request, reply) => {
-    const path = (request.url.split('?')[0] ?? request.url) as string;
-    // Static frontend assets — no auth required
-    if (!path.startsWith('/api/')) return;
-    if (PUBLIC_PATH_EXACT.has(path) || PUBLIC_PATH_PREFIXES.some((p) => path.startsWith(p))) {
+    // Use the router-matched pattern (decoded, normalized) — not raw request.url
+    const routePattern = request.routeOptions?.url ?? '';
+    if (!routePattern.startsWith('/api/')) return;
+    if (PUBLIC_PATH_EXACT.has(routePattern) || PUBLIC_PATH_PREFIXES.some((p) => routePattern.startsWith(p))) {
       return;
     }
     await requireAuth(request, reply);
