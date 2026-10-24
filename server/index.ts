@@ -7,6 +7,9 @@ import Fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
+import fastifyStatic from '@fastify/static';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import {
   loginUser,
   requireAuth,
@@ -785,6 +788,13 @@ export function buildApp() {
 
     return reply.send({ importedCount: created.length, transactions: created, document: posted });
   });
+
+  if (process.env.NODE_ENV === 'production') {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const distPath = path.join(__dirname, '..', '..', 'dist');
+    void app.register(fastifyStatic, { root: distPath });
+    app.setNotFoundHandler((_req, reply) => reply.sendFile('index.html'));
+  }
 
   return app;
 }

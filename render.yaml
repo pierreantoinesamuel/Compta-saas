@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: haxatax
+    env: node
+    plan: free
+    buildCommand: npm install && npx vite build && npx tsc -p tsconfig.server.json
+    startCommand: node dist-server/server/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
