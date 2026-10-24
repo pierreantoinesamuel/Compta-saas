@@ -789,7 +789,7 @@ export function buildApp() {
   return app;
 }
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   const app = buildApp();
   const port = Number(process.env.PORT ?? 3001);
   app.listen({ port, host: '0.0.0.0' }).then(() => {

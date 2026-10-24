@@ -32,7 +32,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
     `SELECT u.id, u.email, u.full_name, u.is_active, u.password_hash,
             wm.workspace_id, wm.role
      FROM users u
-     LEFT JOIN workspace_memberships wm ON wm.user_id = u.id
+     LEFT JOIN workspace_memberships wm ON wm.user_id = u.id AND wm.status = 'active'
      WHERE u.email = $1 AND u.is_active = true
      LIMIT 1`,
     [email.toLowerCase().trim()],

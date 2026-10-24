@@ -1277,13 +1277,14 @@ export function App() {
     const rows = lines.slice(1).map((l) => l.split('\t'));
     const pdfName = filename.replace(/\.txt$/i, '.pdf');
     const today = new Date().toLocaleDateString('fr-FR');
-    const thCells = headers.map((h) => `<th>${h}</th>`).join('');
-    const bodyRows = rows.map((row) => `<tr>${row.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('');
+    const esc = (s: string) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const thCells = headers.map((h) => `<th>${esc(h)}</th>`).join('');
+    const bodyRows = rows.map((row) => `<tr>${row.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('');
     const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>FEC — ${pdfName}</title>
+<title>FEC — ${esc(pdfName)}</title>
 <style>
   body{font-family:Arial,sans-serif;font-size:8px;margin:8mm;color:#111}
   h1{font-size:13px;color:#00382b;margin-bottom:4px}
