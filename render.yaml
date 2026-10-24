@@ -3,7 +3,7 @@ services:
     name: haxatax
     env: node
     plan: free
-    buildCommand: npm install && npx vite build
+    buildCommand: npm install --include=dev && npx vite build
     startCommand: ./node_modules/.bin/tsx server/index.ts
     envVars:
       - key: NODE_ENV
