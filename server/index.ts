@@ -28,6 +28,7 @@ import {
   validateSiren,
   validateSiret,
 } from './domain/contacts/frenchLegalValidators.js';
+import { lookupEntreprise } from './domain/contacts/entreprisesApi.js';
 import { calculateInvoiceTotals } from './domain/tax/vatEngine.js';
 import { workspaceService } from './application/workspaceService.js';
 import {
@@ -43,6 +44,17 @@ import { shutdownOcrEngine } from './domain/documents/ocrEngine.js';
 import { generateInvoiceHtml } from './domain/invoices/invoiceHtmlGenerator.js';
 import { checkIbanAnomaly } from './domain/documents/phacetAgent.js';
 import { sendIbanAlertEmail } from './domain/notifications/emailSender.js';
+import { computeDepreciationSchedule } from './domain/assets/assetDepreciation.js';
+import { createAsset, getAssets, getAssetById, getDepreciationLines, insertDepreciationLine, disposeAsset } from './db/repositories/assets.repo.js';
+import { computeBalanceSheet, computeIncomeStatement } from './domain/accounting/financialStatements.js';
+import { computeCa3 } from './domain/tax/vatDeclaration.js';
+import { pool } from './db/client.js';
+import { generateSepaPain001 } from './domain/payments/sepaGenerator.js';
+import { generateSignatureToken, verifySignatureToken, hashDocument } from './domain/esignature/signatureService.js';
+import { createSignatureRequest, getSignatureRequest, getSignatureRequestsByDocument, markSigned, markViewed } from './db/repositories/signatureRequests.repo.js';
+import { createExpenseClaim, addExpenseClaimLine, getExpenseClaims, getExpenseClaimById, updateExpenseClaimStatus } from './db/repositories/expenseClaims.repo.js';
+import { createFirm, assignWorkspaceToFirm, getFirmByOwner, removeWorkspaceFromFirm, getFirmById } from './db/repositories/cabinet.repo.js';
+import { withTransaction } from './db/client.js';
 
 export function buildApp() {
   const app = Fastify({
@@ -256,6 +268,19 @@ export function buildApp() {
       computedFrenchVatNumber: computedFrVat,
       vatNumber: vatResult,
     };
+  });
+
+  // Franchise TVA detection — api.entreprises.gouv.fr
+  app.get('/api/v1/contacts/:siren/franchise-check', async (request, reply) => {
+    const { siren } = request.params as { siren: string };
+    const result = await lookupEntreprise(siren);
+    if (result.error === 'INVALID_SIREN_FORMAT') {
+      return reply.status(400).send({ error: { code: 'INVALID_SIREN_FORMAT' } });
+    }
+    if (result.error === 'SIREN_NOT_FOUND') {
+      return reply.status(404).send({ error: { code: 'SIREN_NOT_FOUND' } });
+    }
+    return result;
   });
 
   // Sales Documents (Quotes, Deposit Invoices, Standard Invoices, Credit Notes)
@@ -789,6 +814,282 @@ export function buildApp() {
     const posted = markPosted(workspaceId, documentId, (created as Array<{ id?: string }>)[0]?.id ?? 'batch', 'bank_import');
 
     return reply.send({ importedCount: created.length, transactions: created, document: posted });
+  });
+
+  // ── FIXED ASSETS (Immobilisations) ──────────────────────────────────────
+  const CreateAssetSchema = z.object({
+    label: z.string().trim().min(1),
+    assetCategory: z.string().trim().min(1),
+    acquisitionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    acquisitionCostMinor: z.number().int().positive(),
+    depreciationMethod: z.enum(['LINEAR', 'DECLINING', 'NONE']),
+    usefulLifeMonths: z.number().int().positive().optional(),
+    residualValueMinor: z.number().int().nonnegative().optional(),
+    accountCode: z.string().optional(),
+    amortAccountCode: z.string().optional(),
+    dotationAccountCode: z.string().optional(),
+  });
+
+  app.get('/api/v1/assets', async (request) => {
+    return getAssets(getSession(request).workspaceId);
+  });
+
+  app.post('/api/v1/assets', async (request, reply) => {
+    const parsed = CreateAssetSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: { code: 'INVALID_ASSET', details: parsed.error.flatten() } });
+    return withTransaction(async (client) => createAsset(client, getSession(request).workspaceId, parsed.data));
+  });
+
+  app.get('/api/v1/assets/:assetId/schedule', async (request, reply) => {
+    const { assetId } = request.params as { assetId: string };
+    const asset = await getAssetById(getSession(request).workspaceId, assetId);
+    if (!asset) return reply.status(404).send({ error: { code: 'ASSET_NOT_FOUND' } });
+    return computeDepreciationSchedule({
+      id: asset.id,
+      acquisitionCostMinor: asset.acquisitionCostMinor,
+      acquisitionDate: asset.acquisitionDate,
+      depreciationMethod: asset.depreciationMethod,
+      usefulLifeMonths: asset.usefulLifeMonths,
+      residualValueMinor: asset.residualValueMinor,
+    });
+  });
+
+  app.post('/api/v1/assets/:assetId/run-period', async (request, reply) => {
+    const { assetId } = request.params as { assetId: string };
+    const { periodLabel } = (request.body ?? {}) as { periodLabel?: string };
+    if (!periodLabel || !/^\d{4}-\d{2}$/.test(periodLabel)) {
+      return reply.status(400).send({ error: { code: 'INVALID_PERIOD', message: 'periodLabel must be YYYY-MM' } });
+    }
+    const wid = getSession(request).workspaceId;
+    const asset = await getAssetById(wid, assetId);
+    if (!asset) return reply.status(404).send({ error: { code: 'ASSET_NOT_FOUND' } });
+    const schedule = computeDepreciationSchedule({
+      id: asset.id, acquisitionCostMinor: asset.acquisitionCostMinor,
+      acquisitionDate: asset.acquisitionDate, depreciationMethod: asset.depreciationMethod,
+      usefulLifeMonths: asset.usefulLifeMonths, residualValueMinor: asset.residualValueMinor,
+    });
+    const periodLine = schedule.find((l) => l.periodLabel === periodLabel);
+    if (!periodLine) return reply.status(422).send({ error: { code: 'PERIOD_OUT_OF_SCHEDULE' } });
+    return withTransaction(async (client) =>
+      insertDepreciationLine(client, wid, assetId, periodLine)
+    );
+  });
+
+  app.post('/api/v1/assets/:assetId/dispose', async (request, reply) => {
+    const { assetId } = request.params as { assetId: string };
+    const parsed = z.object({
+      disposalDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      disposalPriceMinor: z.number().int().nonnegative(),
+    }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: { code: 'INVALID_DISPOSAL', details: parsed.data } });
+    const wid = getSession(request).workspaceId;
+    await withTransaction(async (client) => disposeAsset(client, wid, assetId, parsed.data!.disposalDate, parsed.data!.disposalPriceMinor));
+    return { disposed: true };
+  });
+
+  // ── FINANCIAL STATEMENTS ──────────────────────────────────────────────────
+  app.get('/api/v1/reports/balance-sheet', async (request, reply) => {
+    const { start, end } = request.query as { start?: string; end?: string };
+    if (!start || !end) return reply.status(400).send({ error: { code: 'MISSING_PERIOD', message: 'start and end query params required (YYYY-MM-DD)' } });
+    return computeBalanceSheet(getSession(request).workspaceId, start, end);
+  });
+
+  app.get('/api/v1/reports/income-statement', async (request, reply) => {
+    const { start, end } = request.query as { start?: string; end?: string };
+    if (!start || !end) return reply.status(400).send({ error: { code: 'MISSING_PERIOD', message: 'start and end query params required (YYYY-MM-DD)' } });
+    return computeIncomeStatement(getSession(request).workspaceId, start, end);
+  });
+
+  // ── CA3 VAT DECLARATION ───────────────────────────────────────────────────
+  app.get('/api/v1/tax/ca3', async (request, reply) => {
+    const { start, end } = request.query as { start?: string; end?: string };
+    if (!start || !end) return reply.status(400).send({ error: { code: 'MISSING_PERIOD', message: 'start and end query params required (YYYY-MM-DD)' } });
+    return computeCa3(getSession(request).workspaceId, start, end, pool);
+  });
+
+  // ── SEPA PAYMENT BATCHES ──────────────────────────────────────────────────
+  const CreateSepaBatchSchema = z.object({
+    executionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    debtorName: z.string().trim().min(1),
+    debtorIban: z.string().trim().min(15),
+    debtorBic: z.string().optional(),
+    transactions: z.array(z.object({
+      endToEndId: z.string().min(1).max(35),
+      amount: z.number().int().positive(),
+      creditorName: z.string().min(1),
+      creditorIban: z.string().min(15),
+      creditorBic: z.string().optional(),
+      remittanceInfo: z.string().min(1),
+    })).min(1),
+  });
+
+  app.post('/api/v1/payments/sepa-batch', async (request, reply) => {
+    const parsed = CreateSepaBatchSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: { code: 'INVALID_SEPA_BATCH', details: parsed.error.flatten() } });
+    const wid = getSession(request).workspaceId;
+    const batchRef = `HAXATAX-${wid.slice(0, 8).toUpperCase()}-${Date.now()}`;
+    const xml = generateSepaPain001({ batchRef, ...parsed.data });
+    const totalMinor = parsed.data.transactions.reduce((s, t) => s + t.amount, 0);
+    const { rows } = await pool.query(
+      `INSERT INTO sepa_payment_batches (workspace_id, batch_ref, execution_date, debtor_iban, debtor_name, total_amount_minor, tx_count, xml_content)
+       VALUES ($1,$2,$3::DATE,$4,$5,$6,$7,$8) RETURNING id, batch_ref, created_at`,
+      [wid, batchRef, parsed.data.executionDate, parsed.data.debtorIban, parsed.data.debtorName, totalMinor, parsed.data.transactions.length, xml],
+    );
+    return { ...rows[0], xml };
+  });
+
+  app.get('/api/v1/payments/sepa-batches', async (request) => {
+    const { rows } = await pool.query(
+      `SELECT id, batch_ref, execution_date::TEXT, debtor_name, total_amount_minor, tx_count, status, created_at
+       FROM sepa_payment_batches WHERE workspace_id = $1 ORDER BY created_at DESC`,
+      [getSession(request).workspaceId],
+    );
+    return rows;
+  });
+
+  // ── EXPENSE CLAIMS (Notes de frais) ──────────────────────────────────────
+  app.get('/api/v1/expense-claims', async (request) => {
+    return getExpenseClaims(getSession(request).workspaceId);
+  });
+
+  app.post('/api/v1/expense-claims', async (request, reply) => {
+    const parsed = z.object({
+      claimDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      description: z.string().trim().min(1),
+    }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: { code: 'INVALID_CLAIM', details: parsed.error.flatten() } });
+    const sess = getSession(request);
+    return withTransaction(async (client) => createExpenseClaim(client, sess.workspaceId, sess.userId, parsed.data!));
+  });
+
+  app.post('/api/v1/expense-claims/:id/lines', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = z.object({
+      expenseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      description: z.string().trim().min(1),
+      category: z.enum(['MEAL', 'TRANSPORT', 'KM', 'ACCOMMODATION', 'OTHER']),
+      amountTtcMinor: z.number().int().positive(),
+      vatRatePercent: z.number().nonnegative().optional(),
+      vatAmountMinor: z.number().int().nonnegative().optional(),
+      amountHtMinor: z.number().int().nonnegative(),
+      accountCode: z.string().optional(),
+      deductibilityRatio: z.number().min(0).max(1).optional(),
+      kmDistance: z.number().nonnegative().optional(),
+      kmRate: z.number().nonnegative().optional(),
+    }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: { code: 'INVALID_CLAIM_LINE', details: parsed.error.flatten() } });
+    const wid = getSession(request).workspaceId;
+    const claim = await getExpenseClaimById(wid, id);
+    if (!claim) return reply.status(404).send({ error: { code: 'CLAIM_NOT_FOUND' } });
+    if (!['draft'].includes(claim.status)) return reply.status(409).send({ error: { code: 'CLAIM_NOT_EDITABLE' } });
+    return withTransaction(async (client) => addExpenseClaimLine(client, id, wid, parsed.data!));
+  });
+
+  app.patch('/api/v1/expense-claims/:id/status', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = z.object({ status: z.enum(['submitted', 'approved', 'rejected', 'paid']) }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: { code: 'INVALID_STATUS' } });
+    const wid = getSession(request).workspaceId;
+    await withTransaction(async (client) => updateExpenseClaimStatus(client, wid, id, parsed.data!.status));
+    return { updated: true };
+  });
+
+  // ── E-SIGNATURE ───────────────────────────────────────────────────────────
+  // Only the token-bearing view/sign routes are public — /request and /document/:id require auth
+  PUBLIC_PATH_EXACT.add('/api/v1/signatures/:token/view');
+  PUBLIC_PATH_EXACT.add('/api/v1/signatures/:token/sign');
+
+  app.post('/api/v1/signatures/request', async (request, reply) => {
+    const parsed = z.object({
+      documentType: z.string().trim().min(1),
+      documentId: z.string().uuid(),
+      signerName: z.string().trim().min(1),
+      signerEmail: z.string().email(),
+      documentContent: z.string().min(1),
+    }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: { code: 'INVALID_SIG_REQUEST', details: parsed.error.flatten() } });
+    const wid = getSession(request).workspaceId;
+    const { documentType, documentId, signerName, signerEmail, documentContent } = parsed.data!;
+    const documentHashBefore = hashDocument(documentContent);
+    const { token, expiresAt } = generateSignatureToken(documentId, signerEmail);
+    return withTransaction(async (client) =>
+      createSignatureRequest(client, wid, { documentType, documentId, signerName, signerEmail, token, tokenExpiresAt: expiresAt, documentHashBefore })
+    );
+  });
+
+  app.get('/api/v1/signatures/:token/view', async (request, reply) => {
+    const { token } = request.params as { token: string };
+    const sigReq = await getSignatureRequest(token);
+    if (!sigReq) return reply.status(404).send({ error: { code: 'SIGNATURE_NOT_FOUND' } });
+    if (sigReq.status === 'signed') return reply.status(410).send({ error: { code: 'ALREADY_SIGNED' } });
+    if (new Date(sigReq.tokenExpiresAt) < new Date()) return reply.status(410).send({ error: { code: 'TOKEN_EXPIRED' } });
+    const ip = request.ip;
+    await markViewed(token, ip);
+    return sigReq;
+  });
+
+  app.post('/api/v1/signatures/:token/sign', async (request, reply) => {
+    const { token } = request.params as { token: string };
+    const { documentContent, consent } = (request.body ?? {}) as { documentContent?: string; consent?: boolean };
+    if (!consent) return reply.status(400).send({ error: { code: 'CONSENT_REQUIRED' } });
+    const sigReq = await getSignatureRequest(token);
+    if (!sigReq) return reply.status(404).send({ error: { code: 'SIGNATURE_NOT_FOUND' } });
+    if (sigReq.status === 'signed') return reply.status(409).send({ error: { code: 'ALREADY_SIGNED' } });
+    if (new Date(sigReq.tokenExpiresAt) < new Date()) return reply.status(410).send({ error: { code: 'TOKEN_EXPIRED' } });
+    if (!verifySignatureToken(token, sigReq.documentId, sigReq.signerEmail)) {
+      return reply.status(401).send({ error: { code: 'INVALID_TOKEN' } });
+    }
+    const documentHashAfter = documentContent ? hashDocument(documentContent) : sigReq.documentHashBefore;
+    const ip = request.ip;
+    const ua = request.headers['user-agent'] ?? '';
+    await withTransaction(async (client) => markSigned(client, token, ip, ua, documentHashAfter));
+    return { signed: true, signedAt: new Date().toISOString() };
+  });
+
+  app.get('/api/v1/signatures/document/:documentId', async (request) => {
+    const { documentId } = request.params as { documentId: string };
+    return getSignatureRequestsByDocument(getSession(request).workspaceId, documentId);
+  });
+
+  // ── CABINET MODE (multi-dossiers) ─────────────────────────────────────────
+  app.post('/api/v1/cabinet/firms', async (request, reply) => {
+    const parsed = z.object({
+      name: z.string().trim().min(1),
+      siren: z.string().length(9).optional(),
+    }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: { code: 'INVALID_FIRM', details: parsed.error.flatten() } });
+    return withTransaction(async (client) => createFirm(client, getSession(request).userId, parsed.data!.name, parsed.data!.siren));
+  });
+
+  app.get('/api/v1/cabinet/firms/mine', async (request) => {
+    return getFirmByOwner(getSession(request).userId);
+  });
+
+  app.post('/api/v1/cabinet/firms/:firmId/assign', async (request, reply) => {
+    const { firmId } = request.params as { firmId: string };
+    const { workspaceId } = (request.body ?? {}) as { workspaceId?: string };
+    if (!workspaceId) return reply.status(400).send({ error: { code: 'MISSING_WORKSPACE_ID' } });
+    const firm = await getFirmById(firmId);
+    if (!firm) return reply.status(404).send({ error: { code: 'FIRM_NOT_FOUND' } });
+    const session = getSession(request);
+    if (firm.ownerUserId !== session.userId) return reply.status(403).send({ error: { code: 'FORBIDDEN' } });
+    // Verify caller has owner/admin membership in the target workspace (prevents IDOR)
+    const memberCheck = await pool.query(
+      `SELECT 1 FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND role IN ('owner','admin')`,
+      [workspaceId, session.userId],
+    );
+    if (!memberCheck.rowCount) return reply.status(403).send({ error: { code: 'NOT_WORKSPACE_OWNER_OR_ADMIN' } });
+    await withTransaction(async (client) => assignWorkspaceToFirm(client, firmId, workspaceId));
+    return { assigned: true };
+  });
+
+  app.delete('/api/v1/cabinet/firms/:firmId/workspaces/:workspaceId', async (request, reply) => {
+    const { firmId, workspaceId } = request.params as { firmId: string; workspaceId: string };
+    const firm = await getFirmById(firmId);
+    if (!firm) return reply.status(404).send({ error: { code: 'FIRM_NOT_FOUND' } });
+    if (firm.ownerUserId !== getSession(request).userId) return reply.status(403).send({ error: { code: 'FORBIDDEN' } });
+    await withTransaction(async (client) => removeWorkspaceFromFirm(client, firmId, workspaceId));
+    return reply.status(204).send();
   });
 
   if (process.env.NODE_ENV === 'production') {

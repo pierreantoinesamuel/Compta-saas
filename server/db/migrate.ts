@@ -18,7 +18,7 @@ export async function runMigrations(): Promise<void> {
       )
     `);
 
-    const migrations = ['001_initial_schema.sql'];
+    const migrations = ['001_initial_schema.sql', '002_new_features.sql'];
 
     for (const name of migrations) {
       const { rowCount } = await client.query(
