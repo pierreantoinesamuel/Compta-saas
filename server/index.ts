@@ -1010,6 +1010,11 @@ export function buildApp() {
     if (newStatus === 'submitted' && !isOwner) {
       return reply.status(403).send({ error: { code: 'FORBIDDEN_NOT_OWNER' } });
     }
+    // Only privileged roles may approve/reject/mark paid
+    const APPROVER_ROLES: string[] = ['owner', 'admin', 'finance', 'accountant'];
+    if (['approved', 'rejected', 'paid'].includes(newStatus) && !APPROVER_ROLES.includes(getSession(request).role)) {
+      return reply.status(403).send({ error: { code: 'FORBIDDEN_INSUFFICIENT_ROLE' } });
+    }
     // Segregation of duties: owner may never approve/reject/pay their own claim
     if (['approved', 'rejected', 'paid'].includes(newStatus) && isOwner) {
       return reply.status(403).send({ error: { code: 'FORBIDDEN_SELF_APPROVAL' } });
