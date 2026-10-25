@@ -6010,7 +6010,7 @@ ${rows.map((r) => `<tr>
                   <p style={{ fontSize: '1rem', color: '#475569', marginBottom: '1.5rem' }}>
                     La solution complète pour gérer votre entreprise (de la Micro-entreprise à la SAS/SARL) et produire un FEC 18 colonnes irréprochable.
                   </p>
-                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       className="pl-btn pl-btn-mint"
@@ -6043,14 +6043,14 @@ ${rows.map((r) => `<tr>
                     <span>● Tableau de bord Trésorerie & TVA Temps Réel</span>
                     <span>SIREN {workspace?.siren}</span>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-                    <div style={{ background: 'rgba(255,255,255,0.08)', padding: '0.85rem', borderRadius: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.08)', padding: '0.85rem', borderRadius: 10, minWidth: 0 }}>
                       <div style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>SOLDE TRÉSORERIE</div>
-                      <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#00e676' }}>235 035,17 €</div>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#00e676', wordBreak: 'break-all' }}>235 035,17 €</div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.08)', padding: '0.85rem', borderRadius: 10 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.08)', padding: '0.85rem', borderRadius: 10, minWidth: 0 }}>
                       <div style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>FACTUR-X EN 16931</div>
-                      <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>100 % Validé</div>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 800, wordBreak: 'break-word' }}>100 % Validé</div>
                     </div>
                   </div>
                   <div style={{ background: 'rgba(0,230,118,0.12)', border: '1px solid rgba(0,230,118,0.3)', padding: '0.75rem', borderRadius: 8, fontSize: '0.78rem' }}>
@@ -6674,7 +6674,7 @@ ${rows.map((r) => `<tr>
                   </p>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem', maxWidth: 1100 }}>
+                <div className="pl-cycles-grid">
                   {cycleConfig.map(({ key, label, subtitle, accent, bg, border }) => {
                     const tasks = CYCLE_TASKS[key];
                     const checked = cycleChecked[key];

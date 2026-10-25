@@ -692,14 +692,17 @@ select:focus-visible {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
 }
 
 .pl-kpi-box-value {
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 800;
   color: var(--text-main);
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+  word-break: break-all;
 }
 
 .pl-trend-pill {
@@ -727,7 +730,10 @@ select:focus-visible {
   box-shadow: var(--shadow-xs);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  overflow: visible;
+  min-height: 300px;
 }
 
 /* ============================================================================
@@ -1342,54 +1348,433 @@ select:focus-visible {
 }
 
 /* ============================================================================
-   RESPONSIVE BREAKPOINTS
+   PREMIUM DESIGN LAYER — élévation visuelle "cabinet expertise comptable"
    ============================================================================ */
+
+/* --- Topbar : dégradé raffiné + ombre portée subtile --- */
+.pl-topbar {
+  background: linear-gradient(160deg, #003828 0%, #004d3b 60%, #005a44 100%);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06), 0 4px 16px rgba(0,26,20,0.35);
+  height: 56px;
+}
+
+/* Logo mark gradient */
+.pl-logo-mark {
+  background: linear-gradient(135deg, #00e676 0%, #00c864 100%);
+  box-shadow: 0 2px 8px rgba(0,230,118,0.45);
+}
+
+/* Company selector glass */
+.pl-company-selector {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.14);
+  backdrop-filter: blur(8px);
+}
+
+/* Mode buttons */
+.pl-mode-btn.active {
+  background: linear-gradient(135deg, var(--brand-mint) 0%, #00c864 100%);
+  box-shadow: 0 2px 8px rgba(0,230,118,0.4);
+}
+
+/* --- Sidebar sombre (premium dark sidebar) --- */
+.pl-sidebar {
+  background: linear-gradient(180deg, #00261d 0%, #001f17 100%);
+  border-right: 1px solid rgba(255,255,255,0.07);
+}
+
+.pl-nav-group-label {
+  color: rgba(255,255,255,0.3);
+}
+
+.pl-nav-item {
+  color: rgba(255,255,255,0.65);
+}
+
+.pl-nav-item svg {
+  color: rgba(255,255,255,0.5);
+  transition: color 0.14s;
+}
+
+.pl-nav-item:hover {
+  background: rgba(255,255,255,0.07);
+  color: #ffffff;
+}
+
+.pl-nav-item:hover svg {
+  color: rgba(255,255,255,0.85);
+}
+
+.pl-nav-item[aria-current='page'] {
+  background: rgba(0,230,118,0.13);
+  color: #a7f3d0;
+  font-weight: 700;
+}
+
+.pl-nav-item[aria-current='page'] svg {
+  color: var(--brand-mint);
+}
+
+.pl-nav-count {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.6);
+}
+
+.pl-nav-item[aria-current='page'] .pl-nav-count {
+  background: rgba(0,230,118,0.22);
+  color: #6ee7b7;
+}
+
+/* --- Page header : titre légèrement plus imposant --- */
+.pl-page-title {
+  font-size: 1.5rem;
+  letter-spacing: -0.03em;
+  color: #0a0f1e;
+}
+
+/* Subtab active : barre plus épaisse --- */
+.pl-subtab.active {
+  border-bottom-width: 2.5px;
+  color: var(--brand-forest);
+}
+
+/* --- Boutons principaux avec profondeur --- */
+.pl-btn {
+  transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pl-btn-mint {
+  background: linear-gradient(135deg, #00e676 0%, #00c864 100%);
+  box-shadow: 0 2px 10px rgba(0,230,118,0.35);
+  color: #00261d;
+  font-weight: 700;
+}
+
+.pl-btn-mint:hover {
+  background: linear-gradient(135deg, #00c864 0%, #00a857 100%);
+  box-shadow: 0 4px 18px rgba(0,230,118,0.5);
+  transform: translateY(-1px);
+}
+
+.pl-btn-forest {
+  background: linear-gradient(135deg, var(--brand-forest) 0%, var(--brand-forest-mid) 100%);
+  box-shadow: 0 2px 8px rgba(0,38,29,0.28);
+}
+
+.pl-btn-forest:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,38,29,0.38);
+}
+
+.pl-btn-outline {
+  background: #ffffff;
+  border-color: var(--border-default);
+  color: var(--text-main);
+  box-shadow: 0 1px 3px rgba(15,23,42,0.05);
+}
+
+.pl-btn-outline:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 2px 8px rgba(15,23,42,0.08);
+}
+
+/* --- Cards : ombre plus riche, hover expressif --- */
+.pl-table-card {
+  box-shadow: 0 1px 4px rgba(15,23,42,0.06), 0 0 0 1px rgba(15,23,42,0.035);
+  border-color: rgba(203,213,225,0.7);
+}
+
+.pl-pipeline-card {
+  box-shadow: 0 1px 4px rgba(15,23,42,0.05), 0 0 0 1px rgba(15,23,42,0.04);
+  border-radius: var(--radius-md);
+}
+
+.pl-pipeline-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15,23,42,0.1), 0 2px 6px rgba(15,23,42,0.06);
+  border-color: #94a3b8;
+}
+
+.pl-kpi-box {
+  box-shadow: 0 1px 4px rgba(15,23,42,0.05);
+  border-color: rgba(203,213,225,0.7);
+}
+
+.pl-chart-card {
+  box-shadow: 0 1px 4px rgba(15,23,42,0.05);
+}
+
+.pl-meta-card {
+  box-shadow: 0 1px 4px rgba(15,23,42,0.04);
+}
+
+.pl-bento-card {
+  box-shadow: 0 2px 10px rgba(15,23,42,0.05), 0 0 0 1px rgba(15,23,42,0.04);
+  border-radius: var(--radius-lg);
+  border-color: rgba(203,213,225,0.65);
+}
+
+.pl-bento-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(15,23,42,0.12), 0 4px 12px rgba(15,23,42,0.06);
+  border-color: #cbd5e1;
+}
+
+/* --- Bento hero : fond émeraude nacré --- */
+.pl-bento-hero {
+  background: linear-gradient(145deg, #ffffff 0%, #f0fdf8 45%, #e8faf2 100%);
+  box-shadow: 0 4px 24px rgba(0,56,43,0.07), 0 0 0 1px rgba(0,56,43,0.05);
+}
+
+/* --- Table : entête plus raffinée --- */
+.pl-table th {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  font-size: 0.69rem;
+  letter-spacing: 0.055em;
+}
+
+.pl-table tbody tr:hover {
+  background: #f5f8fb;
+}
+
+.pl-table tbody tr.selected-row {
+  background: linear-gradient(90deg, #ecfdf5 0%, #f0fdf8 100%);
+}
+
+/* --- Drawer backdrop : plus cinématographique --- */
+.pl-drawer-backdrop {
+  background: rgba(0,20,15,0.58);
+  backdrop-filter: blur(6px);
+}
+
+.pl-split-inspector {
+  box-shadow: -20px 0 80px rgba(0,20,15,0.32), -4px 0 20px rgba(0,0,0,0.12);
+}
+
+/* --- Einvoice banner déjà bien, légère amélioration --- */
+.pl-einvoice-banner {
+  box-shadow: 0 12px 40px rgba(0,38,29,0.35), 0 4px 12px rgba(0,38,29,0.15);
+}
+
+/* --- Focus visible : anneau émeraude --- */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--brand-emerald);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   RESPONSIVE BREAKPOINTS
+   Desktop/tablet : sidebar gauche + contenu à droite.
+   Mobile ≤640px : sidebar devient barre de navigation fixe en bas.
+   ============================================================================ */
+
+/* --- 1180px: grilles multi-colonnes → 1 col; sidebar légèrement réduite --- */
 @media (max-width: 1180px) {
   .pl-tx-split-layout,
   .pl-achats-3pane,
   .pl-pilotage-grid,
-  .pl-inspector-body,
-  .pl-bento-hero,
-  .pl-bento-grid,
-  .pl-trust-grid {
+  .pl-inspector-body {
     grid-template-columns: 1fr;
   }
-  .pl-shell {
-    flex-direction: column;
-  }
-  .pl-sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid var(--border-light);
-  }
+  /* Bento hero : 2 cols until 900px */
+  .pl-bento-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pl-trust-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pl-sidebar { width: 190px; }
 }
 
+/* --- 900px: bento hero collapses to 1 col --- */
+@media (max-width: 900px) {
+  .pl-bento-hero { grid-template-columns: 1fr; }
+}
+
+/* --- 900px: sidebar plus étroite, labels texte toujours lisibles --- */
+@media (max-width: 900px) {
+  .pl-sidebar { width: 160px; padding: 0.65rem 0.45rem; }
+  .pl-nav-item { font-size: 0.8rem; padding: 0.5rem 0.65rem; }
+  .pl-nav-group-label { font-size: 0.62rem; padding: 0.4rem 0.65rem 0.2rem; }
+}
+
+/* --- 768px: tablette --- */
 @media (max-width: 768px) {
-  .pl-workspace { padding: 1rem; }
+  .pl-workspace { padding: 1rem 0.85rem; }
   .pl-pipeline-grid { grid-template-columns: repeat(2, 1fr); }
-  .pl-table-card { overflow-x: auto; }
-  .pl-page-header { flex-direction: column; align-items: flex-start; }
+  .pl-table-card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .pl-table { min-width: 480px; }
+  .pl-page-header { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
   .pl-filter-bar { flex-direction: column; align-items: flex-start; }
+  .pl-company-selector { display: none; }
+  .pl-bento-card { min-height: 160px; }
+  .pl-subtabs { overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
 }
 
+/* --- Cycles grid --- */
+.pl-cycles-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  max-width: 1100px;
+}
+
+@media (max-width: 900px) {
+  .pl-cycles-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* --- Wrapping responsive utilities --- */
+.pl-page-title-row { flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+  /* Cacher les boutons de mode dans la topbar (accessibles via le drawer) */
+  .pl-mode-btn { display: none !important; }
+  .pl-sync-pill { display: none !important; }
+
+  /* Le filtre de la page header s'enroule verticalement */
+  .pl-page-header > div:last-child { flex-wrap: wrap; width: 100%; }
+
+  /* Grille "processus" 4 colonnes → 2 colonnes */
+  .pl-process-steps { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Cycles : 1 colonne sur mobile */
+  .pl-cycles-grid { grid-template-columns: 1fr !important; }
+
+  /* Bento : 1 colonne sur mobile */
+  .pl-bento-grid, .pl-trust-grid { grid-template-columns: 1fr !important; }
+
+  /* Limiter la largeur des inputs de recherche */
+  .pl-page-header input[type="search"],
+  .pl-page-header input[type="text"] { min-width: 0 !important; width: 100% !important; flex: 1 1 100% !important; }
+}
+
+/* --- Bouton hamburger (mobile uniquement) --- */
+.pl-hamburger {
+  display: none;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 6px;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.pl-hamburger:hover { background: rgba(255,255,255,0.1); }
+
+/* --- Backdrop overlay --- */
+.pl-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.52);
+  z-index: 49;
+  backdrop-filter: blur(2px);
+}
+
+/* --- 640px: sidebar → drawer slide-in depuis la gauche --- */
+@media (max-width: 640px) {
+  .pl-hamburger { display: flex; }
+
+  .pl-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100dvh;
+    width: 270px;
+    min-height: unset;
+    flex-direction: column;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 1rem 0.65rem 1.5rem;
+    border-right: 1px solid rgba(0,230,118,0.2);
+    border-top: none;
+    box-shadow: 6px 0 32px rgba(0,0,0,0.55);
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .pl-sidebar--open {
+    transform: translateX(0);
+  }
+
+  /* Workspace sans padding-bottom */
+  .pl-workspace { padding-bottom: 1rem; }
+
+  /* Rétablir l'affichage des labels et compteurs dans le drawer */
+  .pl-nav-group-label { display: block; }
+  .pl-nav-count { display: inline-flex; }
+
+  /* Items : ligne horizontale classique dans le drawer */
+  .pl-nav-item {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.55rem 0.7rem;
+    min-width: unset;
+    min-height: 44px;
+    flex: unset;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
+    border-radius: 8px;
+    gap: 0;
+  }
+
+  .pl-nav-item:hover {
+    background: rgba(255,255,255,0.08);
+    color: #ffffff;
+  }
+
+  .pl-nav-item[aria-current='page'] {
+    color: var(--brand-mint);
+    background: rgba(0,230,118,0.13);
+  }
+
+  .pl-nav-item svg {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+    color: rgba(255,255,255,0.55);
+  }
+
+  .pl-nav-item[aria-current='page'] svg { color: var(--brand-mint); }
+
+  .pl-nav-item-left {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.55rem;
+    max-width: none;
+    overflow: visible;
+  }
+}
+
+/* --- 480px: petits téléphones --- */
 @media (max-width: 480px) {
   .pl-pipeline-grid { grid-template-columns: 1fr; }
   .pl-table th, .pl-table td { padding: 0.5rem 0.6rem; font-size: 0.78rem; }
   .pl-modal-card { padding: 1rem; }
-  .pl-subtabs { gap: 0.75rem; overflow-x: auto; }
+  .pl-subtabs { gap: 0.75rem; }
   .pl-ledger-top-stats { flex-direction: column; }
+  .pl-sync-pill { display: none; }
+  .pl-topbar { padding: 0 0.85rem; }
+  .pl-workspace { padding: 0.85rem 0.6rem 1rem; }
+  .pl-mode-btn { padding: 0.35rem 0.6rem; font-size: 0.75rem; }
 }
 
+/* --- 375px: très petits téléphones --- */
 @media (max-width: 375px) {
   body { font-size: 13px; }
-  .pl-topbar { padding: 0 0.75rem; }
-  .pl-company-selector { display: none; }
-  .pl-sync-pill { display: none; }
+  .pl-topbar { padding: 0 0.65rem; }
   .pl-pilotage-grid,
   .pl-tx-split-layout,
   .pl-achats-3pane { grid-template-columns: 1fr; }
   .pl-kpi-box-value { font-size: 1rem; }
   .pl-page-title { font-size: 1.15rem; }
+  .pl-mode-btn { display: none; }
+  .pl-workspace { padding: 0.75rem 0.5rem 1rem; }
 }
 
 /* ============================================================================
