@@ -371,6 +371,7 @@ const PCG_SECTORS: Array<{ id: string; label: string; accounts: Array<{ code: st
 
 export function App() {
   const [section, setSection] = useState<NavSection>('pilotage');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [pilotageTab, setPilotageTab] = useState<'tresorerie' | 'dashboard' | 'tva'>('tresorerie');
   const [pipelineFilter, setPipelineFilter] = useState<PipelineFilter>('all');
   const [amountDisplayMode, setAmountDisplayMode] = useState<'TTC' | 'HT'>('TTC');
@@ -381,6 +382,9 @@ export function App() {
   const [docUploading, setDocUploading] = useState(false);
   const [docSelectedId, setDocSelectedId] = useState<string | null>(null);
   const [docKindFilter, setDocKindFilter] = useState<'all' | 'supplier' | 'client' | 'banque'>('all');
+
+  // Écritures auto explainer modal (Tiers processus step 3)
+  const [showEntryAutoModal, setShowEntryAutoModal] = useState(false);
 
   // Relancer le client modal
   const [showRelanceModal, setShowRelanceModal] = useState(false);
@@ -1664,6 +1668,37 @@ export function App() {
 
   const unmatchedBankCount = bankTransactions.filter((t) => t.status === 'unmatched').length;
 
+  // ── Plan de trésorerie — computed from real bank transactions ──────────────
+  const tresorerieMetrics = useMemo(() => {
+    const enc = bankTransactions.filter((t) => t.amountMinor > 0).reduce((s: number, t: any) => s + t.amountMinor, 0);
+    const dec = bankTransactions.filter((t) => t.amountMinor < 0).reduce((s: number, t: any) => s + Math.abs(t.amountMinor), 0);
+    const solde = bankTransactions.reduce((s: number, t: any) => s + t.amountMinor, 0);
+    const monthMap: Record<string, { key: string; label: string; enc: number; dec: number }> = {};
+    for (const t of bankTransactions) {
+      const key: string = (t.transactionDate ?? '').slice(0, 7);
+      if (!key) continue;
+      if (!monthMap[key]) {
+        const d = new Date(key + '-15');
+        monthMap[key] = {
+          key,
+          label: d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
+          enc: 0,
+          dec: 0,
+        };
+      }
+      if (t.amountMinor > 0) monthMap[key]!.enc += t.amountMinor;
+      else monthMap[key]!.dec += Math.abs(t.amountMinor);
+    }
+    const monthlyData = Object.keys(monthMap).sort().map((k) => monthMap[k]!);
+    const netFlows = monthlyData.map((m) => m.enc - m.dec);
+    const burnMonths = netFlows.filter((n) => n < 0);
+    const cashburnMinor = burnMonths.length > 0
+      ? Math.abs(burnMonths.reduce((s, n) => s + n, 0) / burnMonths.length)
+      : (dec / Math.max(monthlyData.length, 1));
+    const runwayMonths = cashburnMinor > 0 ? Math.round(solde / cashburnMinor) : null;
+    return { enc, dec, solde, monthlyData, cashburnMinor, runwayMonths };
+  }, [bankTransactions]);
+
   // ── Landing page (unauthenticated visitors) ────────────────────────────────
   if (!authToken && showLanding) {
     return <LandingPage onLoginClick={() => setShowLanding(false)} />;
@@ -1687,6 +1722,19 @@ export function App() {
          ==================================================================== */}
       <header className="pl-topbar">
         <div className="pl-topbar-left">
+          <button
+            type="button"
+            className="pl-hamburger"
+            aria-label={mobileNavOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(o => !o)}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
           <div className="pl-logo" onClick={() => setSection('pilotage')}>
             <span className="pl-logo-mark">H</span>
             <span>haxatax</span>
@@ -1738,8 +1786,11 @@ export function App() {
           MAIN APPLICATION SHELL (Sidebar + Dynamic Canvas)
          ==================================================================== */}
       <div className="pl-shell">
-        <aside className="pl-sidebar" aria-label="Menu principal">
-          <div>
+        {mobileNavOpen && (
+          <div className="pl-nav-backdrop" onClick={() => setMobileNavOpen(false)} aria-hidden="true" />
+        )}
+        <aside className={`pl-sidebar${mobileNavOpen ? ' pl-sidebar--open' : ''}`} aria-label="Menu principal">
+          <div onClick={() => setMobileNavOpen(false)}>
             <div className="pl-nav-group-label">Gestion & Pilotage</div>
             <button
               type="button"
@@ -2059,7 +2110,7 @@ export function App() {
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.55rem', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '0.55rem', alignItems: 'center', flexWrap: 'wrap' }}>
                   <span className="pl-chip">Tous les comptes bancaires (512100) ▾</span>
                   <span className="pl-chip">Flux HT / TTC ▾</span>
                   {fecData && (
@@ -2115,11 +2166,15 @@ export function App() {
                 <div className="pl-kpi-stack">
                   <div className="pl-kpi-box">
                     <div className="pl-kpi-box-header">
-                      <span style={{ color: '#059669' }}>↗</span> SOLDE DE TRÉSORERIE
+                      <span style={{ color: tresorerieMetrics.solde >= 0 ? '#059669' : '#dc2626' }}>
+                        {tresorerieMetrics.solde >= 0 ? '↗' : '↘'}
+                      </span> SOLDE DE TRÉSORERIE
                     </div>
                     <div className="pl-kpi-box-value-row">
-                      <span className="pl-kpi-box-value">235 035,17 €</span>
-                      <span className="pl-trend-pill up">+20,4%</span>
+                      <span className="pl-kpi-box-value">{formatMinor(tresorerieMetrics.solde)}</span>
+                      <span className={`pl-trend-pill ${tresorerieMetrics.solde >= 0 ? 'up' : 'warn'}`}>
+                        {tresorerieMetrics.monthlyData.length} mois de données
+                      </span>
                     </div>
                   </div>
 
@@ -2128,8 +2183,10 @@ export function App() {
                       <span style={{ color: '#3b82f6' }}>▣</span> ENCAISSEMENTS (TTC)
                     </div>
                     <div className="pl-kpi-box-value-row">
-                      <span className="pl-kpi-box-value">214 541,50 €</span>
-                      <span className="pl-trend-pill up">+6,55%</span>
+                      <span className="pl-kpi-box-value">{formatMinor(tresorerieMetrics.enc)}</span>
+                      <span className="pl-trend-pill up">
+                        {bankTransactions.filter((t) => t.amountMinor > 0).length} mvts créditeurs
+                      </span>
                     </div>
                   </div>
 
@@ -2138,8 +2195,10 @@ export function App() {
                       <span style={{ color: '#f97316' }}>▣</span> DÉCAISSEMENTS (TTC)
                     </div>
                     <div className="pl-kpi-box-value-row">
-                      <span className="pl-kpi-box-value">189 467,34 €</span>
-                      <span className="pl-trend-pill up">+15,75%</span>
+                      <span className="pl-kpi-box-value">{formatMinor(tresorerieMetrics.dec)}</span>
+                      <span className="pl-trend-pill warn">
+                        {bankTransactions.filter((t) => t.amountMinor < 0).length} mvts débiteurs
+                      </span>
                     </div>
                   </div>
 
@@ -2148,8 +2207,12 @@ export function App() {
                       <span>🔥</span> CASHBURN MENSUEL MOYEN
                     </div>
                     <div className="pl-kpi-box-value-row">
-                      <span className="pl-kpi-box-value">18 420,00 € /mois</span>
-                      <span className="pl-trend-pill warn">+1,50%</span>
+                      <span className="pl-kpi-box-value">
+                        {tresorerieMetrics.cashburnMinor > 0 ? formatMinor(tresorerieMetrics.cashburnMinor) + ' /mois' : '—'}
+                      </span>
+                      <span className="pl-trend-pill warn">
+                        {tresorerieMetrics.monthlyData.length > 0 ? 'Calculé sur ' + tresorerieMetrics.monthlyData.length + ' mois' : 'Pas de données'}
+                      </span>
                     </div>
                   </div>
 
@@ -2158,8 +2221,12 @@ export function App() {
                       <span>⏳</span> RUNWAY PRÉVISIONNEL
                     </div>
                     <div className="pl-kpi-box-value-row">
-                      <span className="pl-kpi-box-value">14 mois</span>
-                      <span className="pl-trend-pill up">Confortable</span>
+                      <span className="pl-kpi-box-value">
+                        {tresorerieMetrics.runwayMonths != null ? tresorerieMetrics.runwayMonths + ' mois' : '—'}
+                      </span>
+                      <span className={`pl-trend-pill ${(tresorerieMetrics.runwayMonths ?? 0) >= 6 ? 'up' : 'warn'}`}>
+                        {tresorerieMetrics.runwayMonths == null ? 'N/A' : tresorerieMetrics.runwayMonths >= 12 ? 'Confortable' : tresorerieMetrics.runwayMonths >= 6 ? 'Acceptable' : 'Attention'}
+                      </span>
                     </div>
                   </div>
 
@@ -2202,110 +2269,55 @@ export function App() {
                     </div>
                   </div>
 
-                  <svg
-                    viewBox="0 0 820 300"
-                    style={{ width: '100%', height: 'auto', overflow: 'visible' }}
-                    role="img"
-                    aria-label="Graphique du plan de trésorerie mensuel"
-                  >
-                    {/* Horizontal grid lines */}
-                    {[40, 90, 140, 190, 240].map((y, idx) => (
-                      <g key={y}>
-                        <line x1="20" y1={y} x2="765" y2={y} stroke="#f1f5f9" strokeWidth="1" />
-                        <text x="775" y={y + 4} fill="#94a3b8" fontSize="10" fontFamily="Inter">
-                          {300 - idx * 60} k€
-                        </text>
-                      </g>
-                    ))}
-
-                    {/* Highlighted Active Month Band (Octobre — like Screenshot 4!) */}
-                    <rect x="468" y="15" width="95" height="235" fill="#d1fae5" opacity="0.45" rx="6" />
-
-                    {/* Monthly Bars (Inflows #6366f1 & Outflows #f48c72) */}
-                    {[
-                      { label: 'Mars', x: 55, inH: 92, outH: 60 },
-                      { label: 'Avril', x: 145, inH: 95, outH: 62 },
-                      { label: 'Mai', x: 235, inH: 98, outH: 65 },
-                      { label: 'Juin', x: 325, inH: 102, outH: 58 },
-                      { label: 'Juil.', x: 415, inH: 108, outH: 68 },
-                      { label: 'Oct. (Actuel)', x: 505, inH: 128, outH: 72, active: true },
-                      { label: 'Nov. (Prév.)', x: 595, inH: 112, outH: 64, dashed: true },
-                      { label: 'Déc. (Prév.)', x: 685, inH: 90, outH: 115, dashed: true },
-                    ].map((m) => (
-                      <g key={m.label}>
-                        <rect
-                          x={m.x - 14}
-                          y={250 - m.inH}
-                          width="12"
-                          height={m.inH}
-                          rx="3"
-                          fill={m.dashed ? '#e0e7ff' : '#6366f1'}
-                          stroke={m.dashed ? '#6366f1' : 'none'}
-                          strokeDasharray={m.dashed ? '3 2' : undefined}
-                        />
-                        <rect
-                          x={m.x + 2}
-                          y={250 - m.outH}
-                          width="12"
-                          height={m.outH}
-                          rx="3"
-                          fill={m.dashed ? '#ffedd5' : '#f48c72'}
-                          stroke={m.dashed ? '#f48c72' : 'none'}
-                          strokeDasharray={m.dashed ? '3 2' : undefined}
-                        />
-                        <text
-                          x={m.x}
-                          y="272"
-                          textAnchor="middle"
-                          fill={m.active ? '#00382b' : '#64748b'}
-                          fontWeight={m.active ? '700' : '500'}
-                          fontSize="11"
-                        >
-                          {m.label}
-                        </text>
-                        <text x={m.x} y="286" textAnchor="middle" fill="#94a3b8" fontSize="9.5">
-                          2026
-                        </text>
-                      </g>
-                    ))}
-
-                    {/* Smooth Treasury Spline Curve (Solid Historical + Dashed Forecast) */}
-                    <path
-                      d="M 55 182 C 100 180, 115 175, 145 168 C 185 158, 205 135, 235 122 C 275 105, 295 85, 325 76 C 365 66, 385 64, 415 58 C 455 50, 480 44, 505 42"
-                      fill="none"
-                      stroke="#047857"
-                      strokeWidth="2.5"
-                    />
-                    <path
-                      d="M 505 42 C 540 42, 565 68, 595 86 C 630 108, 655 132, 685 148"
-                      fill="none"
-                      stroke="#047857"
-                      strokeWidth="2.2"
-                      strokeDasharray="4 4"
-                    />
-
-                    {/* Spline Data Nodes */}
-                    {[
-                      { x: 55, y: 182 },
-                      { x: 145, y: 168 },
-                      { x: 235, y: 122 },
-                      { x: 325, y: 76 },
-                      { x: 415, y: 58 },
-                      { x: 505, y: 42 },
-                      { x: 595, y: 86 },
-                      { x: 685, y: 148 },
-                    ].map((pt, i) => (
-                      <circle
-                        key={i}
-                        cx={pt.x}
-                        cy={pt.y}
-                        r={i === 5 ? 5.5 : 4}
-                        fill={i === 5 ? '#00e676' : '#047857'}
-                        stroke="#ffffff"
-                        strokeWidth="2"
-                      />
-                    ))}
-                  </svg>
+                  {tresorerieMetrics.monthlyData.length === 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: '#94a3b8', fontSize: '0.85rem', flexDirection: 'column', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '2rem' }}>📊</span>
+                      <span>Aucune transaction bancaire enregistrée</span>
+                      <span style={{ fontSize: '0.75rem' }}>Importez un relevé bancaire ou saisissez des écritures BQ pour voir le graphique.</span>
+                    </div>
+                  ) : (() => {
+                    const months = tresorerieMetrics.monthlyData;
+                    const maxAmt = Math.max(...months.flatMap((m) => [m.enc, m.dec]), 1);
+                    const BAR_H = 110;
+                    const BOT = 250;
+                    const L = 40, R = 760;
+                    const todayKey = new Date().toISOString().slice(0, 7);
+                    const xOf = (i: number) => months.length === 1 ? (L + R) / 2 : L + (i / (months.length - 1)) * (R - L);
+                    // Cumulative solde line
+                    let cum = 0;
+                    const soldePts = months.map((m, i) => { cum += m.enc - m.dec; return { x: xOf(i), y: cum }; });
+                    const maxSoldeAbs = Math.max(...soldePts.map((p) => Math.abs(p.y)), 1);
+                    const sY = (v: number) => BOT - 30 - ((v + maxSoldeAbs) / (2 * maxSoldeAbs)) * (BOT - 60);
+                    const lineD = soldePts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${sY(p.y).toFixed(1)}`).join(' ');
+                    return (
+                      <svg viewBox="0 0 820 300" style={{ width: '100%', height: 'auto', overflow: 'visible' }} role="img" aria-label="Graphique du plan de trésorerie mensuel">
+                        {[40, 90, 140, 190, 240].map((y, idx) => (
+                          <g key={y}>
+                            <line x1={L} y1={y} x2={R} y2={y} stroke="#f1f5f9" strokeWidth="1" />
+                            <text x={R + 15} y={y + 4} fill="#94a3b8" fontSize="10" fontFamily="Inter">{Math.round(maxAmt / 100 / 5 * (5 - idx) / 1000)}k€</text>
+                          </g>
+                        ))}
+                        {months.map((m, i) => {
+                          const x = xOf(i);
+                          const inH = Math.max((m.enc / maxAmt) * BAR_H, 1);
+                          const outH = Math.max((m.dec / maxAmt) * BAR_H, 1);
+                          const isActive = m.key === todayKey;
+                          return (
+                            <g key={m.key}>
+                              {isActive && <rect x={x - 20} y="15" width="45" height="235" fill="#d1fae5" opacity="0.45" rx="6" />}
+                              <rect x={x - 14} y={BOT - inH} width="12" height={inH} rx="3" fill="#6366f1" />
+                              <rect x={x + 2} y={BOT - outH} width="12" height={outH} rx="3" fill="#f48c72" />
+                              <text x={x} y="272" textAnchor="middle" fill={isActive ? '#00382b' : '#64748b'} fontWeight={isActive ? '700' : '500'} fontSize="10">{m.label}</text>
+                            </g>
+                          );
+                        })}
+                        {soldePts.length > 1 && <path d={lineD} fill="none" stroke="#047857" strokeWidth="2.5" />}
+                        {soldePts.map((p, i) => (
+                          <circle key={i} cx={p.x} cy={sY(p.y)} r={months[i]?.key === todayKey ? 5.5 : 4} fill={months[i]?.key === todayKey ? '#00e676' : '#047857'} stroke="#fff" strokeWidth="2" />
+                        ))}
+                      </svg>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -5101,11 +5113,11 @@ ${rows.map((r) => `<tr>
                 <div style={{ padding: '0.55rem 1rem', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: '0.75rem', fontWeight: 700, color: '#475569', letterSpacing: '0.03em' }}>
                   PROCESSUS DE SAISIE — Comment démarrer ?
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0 }}>
+                <div className="pl-process-steps" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0 }}>
                   {([
                     { num: '1', icon: '👤', label: 'Créer un tiers', desc: 'Client ou fournisseur avec SIREN / N° TVA', bg: '#f0fdf4', accent: '#059669', action: () => openContactCreate('customer', 'directory') },
                     { num: '2', icon: '📄', label: 'Saisir un document', desc: 'Facture client ou fournisseur, frais', bg: '#eff6ff', accent: '#2563eb', action: () => setShowNewInvoiceModal(true) },
-                    { num: '3', icon: '⚙', label: 'Écritures auto', desc: 'PCG 2025 — journaux VE / HA / OD générés', bg: '#fefce8', accent: '#ca8a04', action: () => setSection('accounting') },
+                    { num: '3', icon: '⚙', label: 'Écritures auto', desc: 'PCG 2025 — voir les 3 modèles générés', bg: '#fefce8', accent: '#ca8a04', action: () => setShowEntryAutoModal(true) },
                     { num: '4', icon: '✓', label: 'Rapprochement', desc: 'Banque, TVA, lettrage 411/401', bg: '#f0fdf4', accent: '#059669', action: () => setSection('banking') },
                   ] as const).map((step, i, arr) => (
                     <button
@@ -5140,7 +5152,7 @@ ${rows.map((r) => `<tr>
                     {label} ({contacts.filter((c) => filter === 'all' || (filter === 'customers' ? c.kind === 'customer' || c.kind === 'both' : c.kind === 'supplier' || c.kind === 'both')).length})
                   </button>
                 ))}
-                <input aria-label="Rechercher un client ou fournisseur" type="search" value={contactDirectorySearch} onChange={(e) => setContactDirectorySearch(e.target.value)} placeholder="Rechercher par nom, SIREN ou TVA…" style={{ marginLeft: 'auto', minWidth: 240, padding: '0.55rem 0.7rem', border: '1px solid #cbd5e1', borderRadius: 6 }} />
+                <input aria-label="Rechercher un client ou fournisseur" type="search" value={contactDirectorySearch} onChange={(e) => setContactDirectorySearch(e.target.value)} placeholder="Rechercher par nom, SIREN ou TVA…" style={{ marginLeft: 'auto', minWidth: 0, flex: '1 1 160px', padding: '0.55rem 0.7rem', border: '1px solid #cbd5e1', borderRadius: 6 }} />
               </div>
 
               <div className="pl-table-card">
@@ -8811,6 +8823,108 @@ ${rows.map((r) => `<tr>
                 );
               })()}
             </form>
+          </div>
+          </FocusTrap>
+        </div>
+      )}
+
+      {/* ==================================================================
+          MODAL: ÉCRITURES AUTO — 3 modèles PCG 2025
+         ================================================================== */}
+      {showEntryAutoModal && (
+        <div className="pl-drawer-backdrop" onClick={() => setShowEntryAutoModal(false)}>
+          <FocusTrap active={showEntryAutoModal}>
+          <div
+            className="pl-meta-card"
+            style={{ maxWidth: 620, margin: '5vh auto', padding: '1.75rem', borderRadius: 14 }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ecriture-auto-title"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+              <div>
+                <h2 id="ecriture-auto-title" style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>⚙ Écritures comptables automatiques — PCG 2025</h2>
+                <p style={{ margin: '0.3rem 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+                  Ces 3 modèles sont générés automatiquement à chaque validation de document.
+                </p>
+              </div>
+              <button type="button" onClick={() => setShowEntryAutoModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.3rem', color: '#94a3b8', padding: '0 0.25rem' }} aria-label="Fermer">×</button>
+            </div>
+
+            {([
+              {
+                num: '1', journal: 'VE — Journal des Ventes', color: '#2563eb', bg: '#eff6ff',
+                title: 'Facture client émise',
+                lines: [
+                  { side: 'D', account: '411xxx', label: 'Clients — compte auxiliaire', note: 'Montant TTC facturé' },
+                  { side: 'C', account: '706xxx', label: 'Prestations de services / Ventes HT', note: 'Base HT' },
+                  { side: 'C', account: '44571x', label: 'TVA collectée (20 % / 10 % / 5,5 %)', note: 'TVA selon taux' },
+                ],
+                note: 'Généré automatiquement lors de l\'émission (statut → issued). Le compte 411 est le COMPAUXNUM du tiers.',
+              },
+              {
+                num: '2', journal: 'HA / AC — Journal des Achats', color: '#7c3aed', bg: '#faf5ff',
+                title: 'Facture fournisseur reçue',
+                lines: [
+                  { side: 'D', account: '60x / 61x / 62x', label: 'Charges (achat, sous-traitance, honoraires…)', note: 'Montant HT' },
+                  { side: 'D', account: '44566x', label: 'TVA déductible sur ABS', note: 'TVA récupérable' },
+                  { side: 'C', account: '401xxx', label: 'Fournisseurs — compte auxiliaire', note: 'Montant TTC' },
+                ],
+                note: 'Comptabilisé à la réception de la facture fournisseur. La TVA à 0 % (franchise, intra-UE) génère une ligne 44566 à zéro.',
+              },
+              {
+                num: '3', journal: 'BQ — Journal de Banque', color: '#059669', bg: '#f0fdf4',
+                title: 'Règlement sur compte bancaire',
+                lines: [
+                  { side: 'D', account: '512xxx', label: 'Banques — encaissement client', note: 'Montant encaissé TTC' },
+                  { side: 'C', account: '411xxx', label: 'Clients (lettrage automatique)', note: 'Solde de la créance apurée' },
+                ],
+                noteAlt: 'Pour un paiement fournisseur : D 401xxx / C 512xxx',
+                note: 'Le lettrage (rapprochement 411/401) est proposé automatiquement dans la section Banque.',
+              },
+            ] as const).map((entry) => (
+              <div key={entry.num} style={{ marginBottom: '1rem', border: `1px solid ${entry.bg}`, borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ background: entry.bg, padding: '0.55rem 0.85rem', borderBottom: `1px solid ${entry.color}22` }}>
+                  <span style={{ background: entry.color, color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700, marginRight: '0.5rem' }}>{entry.num}</span>
+                  <strong style={{ fontSize: '0.82rem', color: entry.color }}>{entry.journal}</strong>
+                  <span style={{ marginLeft: '0.5rem', fontSize: '0.78rem', color: '#475569' }}>— {entry.title}</span>
+                </div>
+                <div style={{ padding: '0.65rem 0.85rem' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                    <thead>
+                      <tr style={{ color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.68rem', letterSpacing: '0.04em' }}>
+                        <th style={{ textAlign: 'left', paddingBottom: '0.3rem', width: 24 }}>D/C</th>
+                        <th style={{ textAlign: 'left', paddingBottom: '0.3rem', width: 120 }}>Compte PCG 2025</th>
+                        <th style={{ textAlign: 'left', paddingBottom: '0.3rem' }}>Libellé</th>
+                        <th style={{ textAlign: 'right', paddingBottom: '0.3rem' }}>Montant</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {entry.lines.map((l, li) => (
+                        <tr key={li} style={{ borderTop: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '0.3rem 0', fontWeight: 800, color: l.side === 'D' ? '#2563eb' : '#059669' }}>{l.side}</td>
+                          <td><code style={{ background: '#f8fafc', padding: '0.1rem 0.35rem', borderRadius: 4, fontSize: '0.75rem' }}>{l.account}</code></td>
+                          <td style={{ color: '#374151' }}>{l.label}</td>
+                          <td style={{ textAlign: 'right', color: '#475569', fontStyle: 'italic' }}>{l.note}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {'noteAlt' in entry && <p style={{ margin: '0.4rem 0 0', fontSize: '0.73rem', color: '#7c3aed', fontStyle: 'italic' }}>↳ {entry.noteAlt}</p>}
+                  <p style={{ margin: '0.4rem 0 0', fontSize: '0.73rem', color: '#64748b' }}>ℹ {entry.note}</p>
+                </div>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              className="pl-btn pl-btn-forest"
+              style={{ width: '100%', marginTop: '0.5rem' }}
+              onClick={() => { setShowEntryAutoModal(false); setSection('accounting'); }}
+            >
+              Voir le Grand Livre →
+            </button>
           </div>
           </FocusTrap>
         </div>
