@@ -7889,6 +7889,16 @@ ${rows.map((r) => `<tr>
                 )}
               </div>
             </div>
+
+            {/* Mobile-only sticky close bar — topbar overflows on narrow screens */}
+            <button
+              type="button"
+              className="pl-inspector-mobile-close"
+              onClick={() => setInspectedInvoice(null)}
+              aria-label="Fermer l'inspecteur de facture"
+            >
+              ✕ Fermer
+            </button>
           </div>
         </div>
       )}
