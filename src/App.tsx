@@ -2247,25 +2247,27 @@ export function App() {
 
                 {/* Interactive SVG Cashflow Combo Chart (Screenshot 4) */}
                 <div className="pl-chart-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                    <div>
-                      <h3 style={{ margin: 0, fontSize: '1rem' }}>
-                        Évolution de la Trésorerie, Encaissements & Décaissements (Exercice 2026)
-                      </h3>
-                      <p style={{ margin: '0.15rem 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                        Synchronisé avec le journal de banque (BQ 512100) et les factures Factur-X émises
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '1rem', fontSize: '0.76rem', fontWeight: 600 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <span style={{ width: 10, height: 10, borderRadius: 2, background: '#6366f1' }} /> Encaissements
-                      </span>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <span style={{ width: 10, height: 10, borderRadius: 2, background: '#f48c72' }} /> Décaissements
-                      </span>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <span style={{ width: 14, height: 3, background: '#047857' }} /> Solde de trésorerie
-                      </span>
+                  <div style={{ marginBottom: '0.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ minWidth: 0, flex: '1 1 0' }}>
+                        <h3 style={{ margin: 0, fontSize: '0.95rem', lineHeight: 1.3 }}>
+                          Évolution de la Trésorerie — Encaissements & Décaissements (2026)
+                        </h3>
+                        <p style={{ margin: '0.1rem 0 0', fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+                          Journal BQ 512100 · Factur-X émises
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.73rem', fontWeight: 600, flexShrink: 0, flexWrap: 'wrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <span style={{ width: 9, height: 9, borderRadius: 2, background: '#6366f1', flexShrink: 0 }} /> Encaissements
+                        </span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <span style={{ width: 9, height: 9, borderRadius: 2, background: '#f48c72', flexShrink: 0 }} /> Décaissements
+                        </span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <span style={{ width: 13, height: 3, background: '#047857', flexShrink: 0 }} /> Solde
+                        </span>
+                      </div>
                     </div>
                   </div>
 

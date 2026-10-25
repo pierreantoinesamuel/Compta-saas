@@ -702,7 +702,7 @@ select:focus-visible {
   color: var(--text-main);
   font-variant-numeric: tabular-nums;
   min-width: 0;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .pl-trend-pill {
