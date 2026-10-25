@@ -989,8 +989,37 @@ export function buildApp() {
     const { id } = request.params as { id: string };
     const parsed = z.object({ status: z.enum(['submitted', 'approved', 'rejected', 'paid']) }).safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: { code: 'INVALID_STATUS' } });
-    const wid = getSession(request).workspaceId;
-    await withTransaction(async (client) => updateExpenseClaimStatus(client, wid, id, parsed.data!.status));
+    const { workspaceId, userId } = getSession(request);
+    const claim = await getExpenseClaimById(workspaceId, id);
+    if (!claim) return reply.status(404).send({ error: { code: 'CLAIM_NOT_FOUND' } });
+
+    const newStatus = parsed.data!.status;
+    const isOwner = claim.employeeUserId === userId;
+
+    // Allowed state machine transitions
+    const ALLOWED_FROM: Record<string, string> = {
+      submitted: 'draft',
+      approved: 'submitted',
+      rejected: 'submitted',
+      paid: 'approved',
+    };
+    if (claim.status !== ALLOWED_FROM[newStatus]) {
+      return reply.status(409).send({ error: { code: 'INVALID_TRANSITION', from: claim.status, to: newStatus } });
+    }
+    // Only the claim owner may submit their own draft
+    if (newStatus === 'submitted' && !isOwner) {
+      return reply.status(403).send({ error: { code: 'FORBIDDEN_NOT_OWNER' } });
+    }
+    // Segregation of duties: owner may never approve/reject/pay their own claim
+    if (['approved', 'rejected', 'paid'].includes(newStatus) && isOwner) {
+      return reply.status(403).send({ error: { code: 'FORBIDDEN_SELF_APPROVAL' } });
+    }
+
+    // Atomic transition: SQL enforces from-state to prevent race conditions
+    const updated = await withTransaction(async (client) =>
+      updateExpenseClaimStatus(client, workspaceId, id, newStatus, claim.status)
+    );
+    if (!updated) return reply.status(409).send({ error: { code: 'CONCURRENT_MODIFICATION' } });
     return { updated: true };
   });
 
@@ -1030,7 +1059,7 @@ export function buildApp() {
 
   app.post('/api/v1/signatures/:token/sign', async (request, reply) => {
     const { token } = request.params as { token: string };
-    const { documentContent, consent } = (request.body ?? {}) as { documentContent?: string; consent?: boolean };
+    const { consent } = (request.body ?? {}) as { consent?: boolean };
     if (!consent) return reply.status(400).send({ error: { code: 'CONSENT_REQUIRED' } });
     const sigReq = await getSignatureRequest(token);
     if (!sigReq) return reply.status(404).send({ error: { code: 'SIGNATURE_NOT_FOUND' } });
@@ -1039,10 +1068,10 @@ export function buildApp() {
     if (!verifySignatureToken(token, sigReq.documentId, sigReq.signerEmail)) {
       return reply.status(401).send({ error: { code: 'INVALID_TOKEN' } });
     }
-    const documentHashAfter = documentContent ? hashDocument(documentContent) : sigReq.documentHashBefore;
+    // Document was frozen at request creation time — never accept hash or content from the signer
     const ip = request.ip;
     const ua = request.headers['user-agent'] ?? '';
-    await withTransaction(async (client) => markSigned(client, token, ip, ua, documentHashAfter));
+    await withTransaction(async (client) => markSigned(client, token, ip, ua, sigReq.documentHashBefore));
     return { signed: true, signedAt: new Date().toISOString() };
   });
 

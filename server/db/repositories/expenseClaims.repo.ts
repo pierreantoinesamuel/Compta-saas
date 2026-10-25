@@ -152,15 +152,17 @@ export async function updateExpenseClaimStatus(
   client: pg.PoolClient,
   workspaceId: string,
   claimId: string,
-  status: ExpenseClaimRow['status'],
+  toStatus: ExpenseClaimRow['status'],
+  fromStatus: ExpenseClaimRow['status'],
   journalEntryId?: string,
-): Promise<void> {
-  await client.query(
-    `UPDATE expense_claims
-     SET status = $3, updated_at = NOW()${journalEntryId ? ', journal_entry_id = $4' : ''}
-     WHERE workspace_id = $1 AND id = $2`,
-    journalEntryId
-      ? [workspaceId, claimId, status, journalEntryId]
-      : [workspaceId, claimId, status],
-  );
+): Promise<boolean> {
+  const params: unknown[] = [workspaceId, claimId, toStatus, fromStatus];
+  let sql = `UPDATE expense_claims SET status = $3, updated_at = NOW()`;
+  if (journalEntryId) {
+    params.push(journalEntryId);
+    sql += `, journal_entry_id = $${params.length}`;
+  }
+  sql += ` WHERE workspace_id = $1 AND id = $2 AND status = $4`;
+  const { rowCount } = await client.query(sql, params);
+  return (rowCount ?? 0) > 0;
 }
